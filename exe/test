@@ -1,8 +1,4 @@
 package main
-func foo() {
-
-
-
-
+func foo()
     eval("userInput")
 }
