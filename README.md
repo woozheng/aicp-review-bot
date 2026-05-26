@@ -19,6 +19,8 @@ Open a PR → Bot reviews it → Posts review with 🔴🟡🟢 severity
 5. Open a PR → Bot reviews it
 
 That's it. 5 minutes.
+demo link
+[https://github.com/woozheng/aicp-review-bot/pull/1](https://github.com/woozheng/aicp-review-bot/pull/1)
 
 ---
 
