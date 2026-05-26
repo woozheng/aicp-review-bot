@@ -1,4 +1,8 @@
 package main
 func foo() {
+
+
+
+
     eval("userInput")
 }
