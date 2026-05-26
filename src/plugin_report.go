@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
 	"strings"
 )
 
@@ -14,22 +12,28 @@ func (p *ReportPlugin) Execute(env *Envelop, agent interface{}) *Envelop {
 	fmt.Printf("[DEBUG] ReportPlugin: intent=%s\n", env.Intent)
 
 	if env.Intent != "report" && env.Intent != "review_trigger" && env.Intent != "webhook" {
+		fmt.Println("[DEBUG] ReportPlugin: intent 不匹配，跳过")
 		env.Receiver = ""
 		return env
 	}
 
+	// ReviewPlugin 返回的是 JSON 字符串（数组格式）
 	reviewResultStr, ok := env.Meta["review_result"].(string)
-	if !ok || reviewResultStr == "" || strings.Contains(reviewResultStr, `"error"`) {
-		fmt.Println("[DEBUG] ReportPlugin: review_result 为空或错误")
+	if !ok || reviewResultStr == "" {
+		fmt.Println("[DEBUG] ReportPlugin: review_result 为空")
 		env.Receiver = ""
 		return env
 	}
 
-	reviewResultStr = cleanJSONResponse(reviewResultStr)
-
+	// 解析 LLM 返回的审查结果数组
 	var issues []map[string]interface{}
+	reviewResultStr = strings.TrimSpace(reviewResultStr)
+	reviewResultStr = strings.TrimPrefix(reviewResultStr, "```json")
+	reviewResultStr = strings.TrimPrefix(reviewResultStr, "```")
+	reviewResultStr = strings.TrimSuffix(reviewResultStr, "```")
+	reviewResultStr = strings.TrimSpace(reviewResultStr)
 	if err := json.Unmarshal([]byte(reviewResultStr), &issues); err != nil {
-		fmt.Printf("[DEBUG] ReportPlugin: 解析失败: %v\n", err)
+		fmt.Printf("[DEBUG] ReportPlugin: 解析 review_result 失败: %v\n", err)
 		env.Receiver = ""
 		return env
 	}
@@ -96,69 +100,19 @@ func (p *ReportPlugin) Execute(env *Envelop, agent interface{}) *Envelop {
 		}
 		md.WriteString("\n")
 	}
+	if fixedCode, ok := env.Meta["fixed_code"].(string); ok && fixedCode != "" {
+		md.WriteString("\n## 🔧 AI 自动修复\n\n")
+		md.WriteString(fmt.Sprintf("```go\n%s\n```\n\n", fixedCode))
+		md.WriteString("*🤖 由 AICP Code Review Bot 自动修复*\n")
+	}
 
 	md.WriteString(fmt.Sprintf("---\n*🤖 由 AICP Code Review Bot 自动生成 | 发现 %d 个问题*", len(issues)))
 
-	// 打印到终端
+	// 存到 Meta，打印到终端
+	env.Meta["review_markdown"] = md.String()
 	fmt.Println("\n" + md.String() + "\n")
-
-	// 发 GitHub 评论
-	token := os.Getenv("GITHUB_TOKEN")
-	repoFull, _ := env.Meta["repo"].(string)
-	prNum := fmt.Sprintf("%v", env.Meta["pr_number"])
-
-	if token != "" && repoFull != "" && prNum != "" && prNum != "0" && prNum != "<nil>" {
-		parts := strings.Split(repoFull, "/")
-		if len(parts) == 2 {
-			go postGitHubComment(token, parts[0], parts[1], prNum, md.String())
-			fmt.Printf("[DEBUG] ReportPlugin: 正在发布评论到 %s/issues/%s/comments\n", repoFull, prNum)
-		}
-	} else {
-		fmt.Printf("[DEBUG] ReportPlugin: 跳过评论发布 token=%t repo=%s pr=%s\n", token != "", repoFull, prNum)
-	}
 
 	env.Meta["review_result"] = nil
 	env.Receiver = ""
 	return env
-}
-
-func postGitHubComment(token, owner, repo, prNum, body string) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/issues/%s/comments", owner, repo, prNum)
-	payload, _ := json.Marshal(map[string]string{"body": body})
-
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(payload)))
-	if err != nil {
-		fmt.Printf("[DEBUG] postGitHubComment: 请求失败 %v\n", err)
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		fmt.Printf("[DEBUG] postGitHubComment: 请求失败 %v\n", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 201 || resp.StatusCode == 200 {
-		fmt.Printf("[DEBUG] postGitHubComment: 评论发布成功！%s/issues/%s\n", owner+"/"+repo, prNum)
-	} else {
-		fmt.Printf("[DEBUG] postGitHubComment: 发布失败，状态码 %d\n", resp.StatusCode)
-	}
-}
-func cleanJSONResponse(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if strings.HasPrefix(raw, "```json") {
-		raw = strings.TrimPrefix(raw, "```json")
-		raw = strings.TrimSuffix(raw, "```")
-		raw = strings.TrimSpace(raw)
-	}
-	if strings.HasPrefix(raw, "```") {
-		raw = strings.TrimPrefix(raw, "```")
-		raw = strings.TrimSuffix(raw, "```")
-		raw = strings.TrimSpace(raw)
-	}
-	return raw
 }

@@ -14,6 +14,7 @@ func main() {
 
 	webhookCh := bus.Subscribe("github-webhook")
 	codeReviewCh := bus.Subscribe("grp.code-review")
+	fixCh := bus.Subscribe("grp.fix")
 	reportCh := bus.Subscribe("grp.report")
 
 	engine.RegisterRoute("github-webhook", []Plugin{
@@ -21,6 +22,9 @@ func main() {
 	})
 	engine.RegisterRoute("grp.code-review", []Plugin{
 		&ReviewPlugin{},
+	})
+	engine.RegisterRoute("grp.fix", []Plugin{
+		&FixPlugin{},
 	})
 	engine.RegisterRoute("grp.report", []Plugin{
 		&ReportPlugin{},
@@ -33,6 +37,11 @@ func main() {
 	}()
 	go func() {
 		for env := range codeReviewCh {
+			engine.Route(env)
+		}
+	}()
+	go func() {
+		for env := range fixCh {
 			engine.Route(env)
 		}
 	}()

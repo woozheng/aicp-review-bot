@@ -10,7 +10,7 @@ type ReviewPlugin struct{}
 func (p *ReviewPlugin) Execute(env *Envelop, agent interface{}) *Envelop {
 	fmt.Printf("[DEBUG] ReviewPlugin: intent=%s\n", env.Intent)
 
-	if env.Intent != "review_trigger" && env.Intent != "webhook" {
+	if env.Intent != "fix" && env.Intent != "webhook" && env.Intent != "review_trigger" {
 		fmt.Println("[DEBUG] ReviewPlugin: intent 不匹配，跳过")
 		env.Receiver = "grp.report"
 		return env
@@ -92,7 +92,7 @@ func (p *ReviewPlugin) Execute(env *Envelop, agent interface{}) *Envelop {
 	env.Meta["review_result"] = reviewResult
 	env.Meta["reviewed_files"] = filteredFiles
 
-	env.Receiver = "grp.report"
+	env.Receiver = "grp.fix"
 	return env
 }
 
